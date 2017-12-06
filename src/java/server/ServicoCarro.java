@@ -5,9 +5,7 @@
  */
 package server;
 
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.algorithms.Algorithm;
-import com.auth0.jwt.interfaces.Claim;
+
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jws;
@@ -46,15 +44,16 @@ public class ServicoCarro {
     @EJB
     private CarroDAO carros;
 
-    private List<Credencial> usuarios;
+    
+    private Credencial c;
 
     public ServicoCarro() {
         carros = new CarroDAO();
         System.out.println("Construtor do serviço");
-        usuarios = new ArrayList<>();
-
-        Credencial c = new Credencial("usuario", "senha");
-        usuarios.add(c);
+        
+        c = new Credencial();
+        c.setLogin("ele");
+        c.setSenha("aaa");
 
     }
 
@@ -62,7 +61,8 @@ public class ServicoCarro {
     @Path("hello")
     @Produces(MediaType.APPLICATION_JSON)
     public Credencial hello() {
-        return new Credencial("user", "pass");
+        
+        return c;
     }
 
     /*Este método recebe uma credencial com usuário e senha e retorna
@@ -70,23 +70,32 @@ public class ServicoCarro {
      */
     @POST
     @Path("/login")
-    @Consumes("application/json")
-    @Produces("application/json")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     public String login(Credencial credencial) {
         
+        System.out.println("Login: "+ credencial.getLogin()+"; senha:  " + credencial.getSenha());
         Boolean achou = false;
-        for (Credencial c : usuarios) {
+        
             if (credencial.getLogin().equals(c.getLogin()) && credencial.getSenha().equals(c.getSenha())) {
                 achou = true;
-                break;
+               
             }
-        }
+        
 
         if (achou)
             return JWTUtil.create(credencial.getLogin());
         else 
-            throw new WebApplicationException(Response.Status.NOT_ACCEPTABLE);
+            throw new WebApplicationException(Response.Status.NOT_FOUND);
     }
+    
+    /*
+    GET
+    /session
+    "Autorization": "token"
+    
+    corpo...
+    */
     
     @POST
     @Path("/session")
@@ -117,7 +126,7 @@ public class ServicoCarro {
     @Path("/{id}")
     @Produces("application/json")
     public Carro getCarro(@PathParam("id") int id) {
-        System.out.println("entrou");
+        System.out.println("entrou no get carro");
 
         for (Carro carro : carros.getAll()) {
             if (carro.getId() == id) {
@@ -138,19 +147,41 @@ public class ServicoCarro {
     @POST
     @Path("/")
     @Consumes("application/json")
-    public synchronized void add(Carro c) {
+    public synchronized void add(Carro c, @HeaderParam("Authorization")String token) {
 
-        if (c.getNome() == null || c.getPreco() == null || c.getTipo() == null) {
+        //verificar a autenticação
+        if(token == null)
+        {
+            throw new WebApplicationException( Response.Status.FORBIDDEN );
+        }
+        
+        System.out.println("Token recebido: "+ token);
+        try{
+            Jws<Claims> claims =  JWTUtil.decode(token);
+             if (c.getNome() == null || c.getPreco() == null || c.getTipo() == null) {
             throw new WebApplicationException(Response.Status.BAD_REQUEST);
         }
 
         carros.add(c);
+         
+        }catch(ExpiredJwtException ex)
+        {
+            throw new WebApplicationException("Tempo do token expirado.", Response.Status.FORBIDDEN);
+        }catch(Exception e)
+        {
+            throw new WebApplicationException("Token inválido.", Response.Status.FORBIDDEN);
+        }
+       
     }
 
     @PUT
     @Path("/{id}")
     @Consumes("application/json")
-    public synchronized void update(@PathParam("id") int id, Carro c) {
+    public synchronized void update(@PathParam("id") int id, Carro c, @HeaderParam("Authorization") String token ) {
+         
+        String user = testaToken(token);
+        System.out.println("Usuario " + user + " com token: " +token);
+        
         if (c.getNome() == null || c.getPreco() == null || c.getTipo() == null) {
             throw new WebApplicationException(Response.Status.BAD_REQUEST);
         }
@@ -168,5 +199,26 @@ public class ServicoCarro {
         carros.delete(id);
     }
     
-
+private String testaToken( String token )
+{
+     if(token == null)
+        {
+            throw new WebApplicationException( Response.Status.FORBIDDEN );
+        }
+        
+        System.out.println("Token recebido: "+ token);
+        try{
+            Jws<Claims> claims =  JWTUtil.decode(token);
+            return  claims.getBody().getSubject();
+        
+        }catch(ExpiredJwtException ex)
+        {
+            throw new WebApplicationException("Tempo do token expirado.", Response.Status.FORBIDDEN);
+        }catch(Exception e)
+        {
+            throw new WebApplicationException("Token inválido.", Response.Status.FORBIDDEN);
+        }
+}
+    
+    
 }
